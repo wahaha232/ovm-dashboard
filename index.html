@@ -71,14 +71,14 @@
   </section>
 
   <section id="devicesSec" hidden>
-    <h2>各電腦（每台電腦自行定時回報）</h2>
+    <h2>各裝置（每台裝置自行定時回報）</h2>
     <div class="cards" id="devices"></div>
   </section>
 
   <section id="walletSec" hidden>
     <h2>錢包收益（礦池資料，錢包層級）</h2>
     <div class="tiles" id="wallet"></div>
-    <p class="note">收益與 USDT 換算由各電腦從 LuckPool／CoinGecko 取得後回報，取最新的一份；換算僅供參考，不構成財務建議。LuckPool 不提供單一電腦的收益，因此不分攤到各電腦。</p>
+    <p class="note">收益與 USDT 換算由各裝置從 LuckPool／CoinGecko 取得後回報，取最新的一份；換算僅供參考，不構成財務建議。LuckPool 不提供單一裝置的收益，因此不分攤到各裝置。</p>
   </section>
 
   <div class="bar">
@@ -163,14 +163,14 @@ function render({ files, updated }) {
   const tags = new Set(devices.map(x => x.d.walletTag).filter(Boolean));
 
   $("summary").innerHTML = [
-    ["電腦", `${mining.length} 挖礦 / ${devices.length} 台`, mining.length < devices.length ? "bad" : "good"],
-    ["總算力（各電腦回報）", hashrate(total)],
+    ["裝置", `${mining.length} 挖礦 / ${devices.length} 台`, mining.length < devices.length ? "bad" : "good"],
+    ["總算力（各裝置回報）", hashrate(total)],
     ["接受份額（合計）", mining.reduce((s, x) => s + (x.d.accepted || 0), 0) + " / 拒絕 " + mining.reduce((s, x) => s + (x.d.rejected || 0), 0)],
     ["最後更新", updated ? ago(updated) : "N/A"],
   ].map(([k, v, cls]) => `<div class="tile"><div class="k">${esc(k)}</div><div class="v ${cls || ""}">${esc(v)}</div></div>`).join("");
 
   $("devices").innerHTML = devices.length === 0
-    ? `<p class="note">Gist 裡還沒有任何電腦的回報。請在各電腦的管理工具啟用「GitHub 回報」。</p>`
+    ? `<p class="note">Gist 裡還沒有任何裝置的回報。請在各裝置的管理工具啟用「GitHub 回報」。</p>`
     : devices.map(({ d, reported, interval, stale }) => {
       let badge, cls;
       if (stale) { badge = "✖ 無更新"; cls = "bad"; }
@@ -183,13 +183,15 @@ function render({ files, updated }) {
         : d.mining
           ? [`份額 ${d.accepted}/${d.rejected}`, `${d.threads} 執行緒`, d.tempC != null ? d.tempC.toFixed(0) + "°C" : "溫度 N/A", "運作 " + duration(d.uptimeSeconds), "回報 " + ago(reported)]
           : [d.pauseReason || d.status, "回報 " + ago(reported)];
+      if (!stale && d.batteryPercent != null) parts.splice(1, 0, `🔋 ${Math.round(d.batteryPercent)}%${d.charging ? " 充電中" : d.charging === false ? " 用電池" : ""}`);
       if (d.walletTag && tags.size > 1) parts.push("⚠ 不同錢包");
       const rows = [
-        ["電腦", `${d.machine}（${d.deviceKind}）`],
+        ["裝置", `${d.machine}（${d.deviceKind}）`],
         ["算力", `${hashrate(d.hashrateHps)}（平均 ${hashrate(d.averageHps)}）`],
         ["份額", `接受 ${d.accepted} / 拒絕 ${d.rejected}`],
         ["執行緒", d.threads],
-        ["溫度", d.tempC != null ? d.tempC.toFixed(1) + " °C（ACPI）" : "N/A（這台電腦沒有溫度感測）"],
+        ["溫度", d.tempC != null ? d.tempC.toFixed(1) + " °C（ACPI）" : "N/A（這台裝置沒有溫度感測）"],
+        ["電量", d.batteryPercent != null ? `${Math.round(d.batteryPercent)}%（${d.charging ? "接電中" : "使用電池"}）` : "—（沒有電池）"],
         ["礦池", d.pool || "—"],
         ["狀態", d.status + (d.pauseReason ? `（${d.pauseReason}）` : "")],
         ["管理工具", d.version],
@@ -221,7 +223,7 @@ function render({ files, updated }) {
   $("walletSec").hidden = !w;
   $("summarySec").hidden = false;
   $("devicesSec").hidden = false;
-  $("meta").textContent = `${devices.length} 台電腦 ・ 頁面更新 ${fmtTime(new Date())}`;
+  $("meta").textContent = `${devices.length} 台裝置 ・ 頁面更新 ${fmtTime(new Date())}`;
 }
 
 let timer = null, next = 0;

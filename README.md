@@ -1,9 +1,9 @@
 # OpenVerusMiner 網頁版儀表板
 
-`index.html` 是一個靜態網頁，放在 GitHub Pages 上。它會讀取各電腦定時寫入的 GitHub Gist，
-在任何瀏覽器（手機、公司電腦）顯示所有電腦的挖礦狀態。網頁本身不含任何 Token 或錢包地址。
+`index.html` 是一個靜態網頁，放在 GitHub Pages 上。它會讀取各裝置定時寫入的 GitHub Gist，
+在任何瀏覽器（手機、公司裝置）顯示所有裝置的挖礦狀態。網頁本身不含任何 Token 或錢包地址。
 
-## 一、建立 GitHub Token（每台電腦可共用同一組）
+## 一、建立 GitHub Token（每台裝置可共用同一組）
 
 建議用傳統 Token（classic），只需要勾一個權限：
 
@@ -14,14 +14,14 @@
 
 也可用 Fine-grained token：權限在 **User permissions**（舊畫面叫 Account permissions）→ **Gists → Read and write**；新畫面看不到時先按 **Add permissions** 再搜尋 Gists。
 
-## 二、在第一台電腦建立 Gist
+## 二、在第一台裝置建立 Gist
 
 管理工具 → 設定 → 自動化與通知 → **GitHub 回報**：
 
 1. 貼上 Token → 按 **建立 Gist**（會建立一個私密 Gist，並自動填入 Gist ID）
 2. 選回報間隔（預設每 10 分鐘，對齊時鐘）→ 勾選 **啟用 GitHub 回報** → **儲存**
 
-## 三、其他電腦
+## 三、其他裝置
 
 同一個畫面貼上同一組 Token、填同一個 Gist ID → 勾選啟用 → 儲存。
 
