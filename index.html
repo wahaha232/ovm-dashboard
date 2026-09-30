@@ -193,6 +193,7 @@ function render({ files, updated }) {
         ["礦池", d.pool || "—"],
         ["狀態", d.status + (d.pauseReason ? `（${d.pauseReason}）` : "")],
         ["管理工具", d.version],
+        ["更新", d.updateStatus || "（1.13.2 以前的版本不回報）"],
         ["回報時間", fmtTime(reported) + `（每 ${interval} 分鐘）`],
       ];
       if (d.lastError) rows.push(["最近錯誤", `${d.lastErrorUtc ? fmtTime(new Date(d.lastErrorUtc)) + " " : ""}${d.lastError}`]);
