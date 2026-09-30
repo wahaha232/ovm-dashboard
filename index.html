@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
+<title>OpenVerusMiner 網頁版儀表板</title>
+<style>
+  :root {
+    --bg: #f4f5f7; --panel: #ffffff; --fg: #1d1f23; --muted: #6b7280; --border: #dfe2e7;
+    --accent: #1565c0; --good: #2e7d32; --warn: #b26a00; --bad: #c62828;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #16181c; --panel: #1f2227; --fg: #e6e8eb; --muted: #9aa1ab; --border: #33373e;
+            --accent: #5aa9f5; --good: #66bb6a; --warn: #ffb74d; --bad: #ef5350; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg);
+         font: 15px/1.45 "Microsoft JhengHei UI", "PingFang TC", "Noto Sans TC", system-ui, sans-serif; }
+  header { padding: 14px 16px 6px; display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: baseline; }
+  header h1 { font-size: 20px; margin: 0; color: var(--accent); }
+  header .meta { color: var(--muted); font-size: 13px; }
+  main { padding: 0 16px 24px; max-width: 1200px; }
+  section { margin-top: 14px; }
+  h2 { font-size: 15px; margin: 0 0 8px; color: var(--accent); }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; }
+  .tile { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; }
+  .tile .k { color: var(--muted); font-size: 12px; }
+  .tile .v { font-size: 17px; font-weight: 600; word-break: break-all; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 8px; }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; }
+  .card.stale { border-color: var(--bad); opacity: .85; }
+  .l1 { display: flex; align-items: baseline; gap: 10px; }
+  .l1 .name { font-weight: 700; font-size: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .l1 .rate { color: var(--accent); font-weight: 600; white-space: nowrap; }
+  .l1 .badge { margin-left: auto; font-weight: 700; white-space: nowrap; font-size: 14px; }
+  .l2 { color: var(--muted); font-size: 13px; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card.stale .l2 { color: var(--bad); }
+  details { margin-top: 4px; font-size: 13px; }
+  details summary { cursor: pointer; color: var(--muted); }
+  details table { border-collapse: collapse; margin-top: 4px; width: 100%; }
+  details td { padding: 2px 0; vertical-align: top; }
+  details td:first-child { color: var(--muted); width: 7.5em; }
+  .good { color: var(--good); } .warn { color: var(--warn); } .bad { color: var(--bad); }
+  .note { color: var(--muted); font-size: 12px; margin-top: 8px; }
+  .bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 6px; }
+  button, input { font: inherit; color: var(--fg); background: var(--panel); border: 1px solid var(--border); border-radius: 5px; padding: 4px 10px; }
+  button { cursor: pointer; }
+  #setup { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 12px; margin-top: 14px; }
+  #setup input { width: min(100%, 420px); }
+  .error { color: var(--bad); margin-top: 10px; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<header>
+  <h1>⛏ OpenVerusMiner</h1>
+  <span class="meta" id="meta">載入中…</span>
+</header>
+<main>
+  <div id="setup" hidden>
+    <b>輸入 Gist ID</b>
+    <p class="note">在管理工具「設定 → 自動化與通知 → GitHub 回報」可以看到 Gist ID。只會存在這個瀏覽器裡，下次不用再輸入。</p>
+    <div class="bar"><input id="gistInput" placeholder="例如 3f2a…（或整個 gist 網址）"><button id="gistSave">開始</button></div>
+  </div>
+  <div class="error" id="error" hidden></div>
+
+  <section id="summarySec" hidden>
+    <h2>總覽</h2>
+    <div class="tiles" id="summary"></div>
+  </section>
+
+  <section id="devicesSec" hidden>
+    <h2>各電腦（每台電腦自行定時回報）</h2>
+    <div class="cards" id="devices"></div>
+  </section>
+
+  <section id="walletSec" hidden>
+    <h2>錢包收益（礦池資料，錢包層級）</h2>
+    <div class="tiles" id="wallet"></div>
+    <p class="note">收益與 USDT 換算由各電腦從 LuckPool／CoinGecko 取得後回報，取最新的一份；換算僅供參考，不構成財務建議。LuckPool 不提供單一電腦的收益，因此不分攤到各電腦。</p>
+  </section>
+
+  <div class="bar">
+    <button id="refresh">立即更新</button>
+    <span class="note" id="countdown"></span>
+    <button id="forget" title="清除這個瀏覽器記住的 Gist ID">更換 Gist</button>
+  </div>
+  <p class="note">唯讀頁面：只顯示狀態，不能操作挖礦；不含錢包地址。資料來源：GitHub Gist（未登入時 GitHub 每小時限制 60 次讀取，因此每 5 分鐘自動更新）。</p>
+</main>
+<script>
+"use strict";
+const REFRESH_SECONDS = 300;
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+function cleanGist(text) {
+  let t = String(text || "").trim().replace(/\/+$/, "");
+  if (t.includes("/")) t = t.slice(t.lastIndexOf("/") + 1);
+  return t.replace(/[^A-Za-z0-9]/g, "");
+}
+function hashrate(h) {
+  if (h == null || !isFinite(h)) return "N/A";
+  if (h >= 1e9) return (h / 1e9).toFixed(2) + " GH/s";
+  if (h >= 1e6) return (h / 1e6).toFixed(2) + " MH/s";
+  if (h >= 1e3) return (h / 1e3).toFixed(2) + " KH/s";
+  return h.toFixed(0) + " H/s";
+}
+const vrsc = v => v == null ? "N/A" : Number(v).toFixed(6) + " VRSC";
+const usdt = (v, p) => v == null || p == null ? "N/A" : "≈ " + (v * p).toFixed(4) + " USDT";
+function ago(date) {
+  const s = Math.max(0, (Date.now() - date.getTime()) / 1000);
+  if (s < 90) return Math.round(s) + " 秒前";
+  if (s < 5400) return Math.round(s / 60) + " 分鐘前";
+  if (s < 172800) return (s / 3600).toFixed(1) + " 小時前";
+  return Math.round(s / 86400) + " 天前";
+}
+function duration(sec) {
+  const m = Math.floor((sec || 0) / 60), h = Math.floor(m / 60);
+  return h > 0 ? `${h} 小時 ${m % 60} 分` : `${m} 分`;
+}
+const fmtTime = d => d.toLocaleString("zh-TW", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false });
+
+function currentGist() {
+  const q = new URLSearchParams(location.search);
+  const fromUrl = cleanGist(q.get("gist"));
+  if (fromUrl) { localStorage.setItem("ovmGist", fromUrl); return fromUrl; }
+  return localStorage.getItem("ovmGist") || "";
+}
+
+async function fetchGist(id) {
+  // ?data=<url> reads a gist-shaped JSON from another address (for checking the page with a saved response)
+  const data = new URLSearchParams(location.search).get("data");
+  const url = data || ("https://api.github.com/gists/" + encodeURIComponent(id));
+  const res = await fetch(url, { headers: data ? {} : { "Accept": "application/vnd.github+json" }, cache: "no-store" });
+  if (!res.ok) {
+    if (res.status === 404) throw new Error("找不到這個 Gist（HTTP 404）：請確認 Gist ID。");
+    if (res.status === 403 || res.status === 429) throw new Error("GitHub 暫時限制讀取次數（每小時 60 次），請稍後再按「立即更新」。");
+    throw new Error("讀取 GitHub 失敗：HTTP " + res.status);
+  }
+  const gist = await res.json();
+  const files = [];
+  for (const [name, f] of Object.entries(gist.files || {})) {
+    if (!/^device-.*\.json$/i.test(name)) continue;
+    let content = f.content;
+    if (f.truncated && f.raw_url) content = await (await fetch(f.raw_url, { cache: "no-store" })).text();
+    try { files.push(JSON.parse(content)); } catch { /* not ours */ }
+  }
+  return { files, updated: gist.updated_at ? new Date(gist.updated_at) : null };
+}
+
+function render({ files, updated }) {
+  const now = Date.now();
+  const devices = files.filter(f => f && f.device).map(f => {
+    const d = f.device, reported = new Date(d.reportedUtc);
+    const interval = Math.max(1, f.intervalMinutes || 10);
+    const stale = now - reported.getTime() > interval * 2.5 * 60000;
+    return { d, reported, interval, stale, wallet: f.wallet };
+  }).sort((a, b) => (a.d.name || "").localeCompare(b.d.name || "", "zh-Hant"));
+
+  const mining = devices.filter(x => !x.stale && x.d.mining);
+  const total = mining.reduce((s, x) => s + (x.d.hashrateHps || 0), 0);
+  const tags = new Set(devices.map(x => x.d.walletTag).filter(Boolean));
+
+  $("summary").innerHTML = [
+    ["電腦", `${mining.length} 挖礦 / ${devices.length} 台`, mining.length < devices.length ? "bad" : "good"],
+    ["總算力（各電腦回報）", hashrate(total)],
+    ["接受份額（合計）", mining.reduce((s, x) => s + (x.d.accepted || 0), 0) + " / 拒絕 " + mining.reduce((s, x) => s + (x.d.rejected || 0), 0)],
+    ["最後更新", updated ? ago(updated) : "N/A"],
+  ].map(([k, v, cls]) => `<div class="tile"><div class="k">${esc(k)}</div><div class="v ${cls || ""}">${esc(v)}</div></div>`).join("");
+
+  $("devices").innerHTML = devices.length === 0
+    ? `<p class="note">Gist 裡還沒有任何電腦的回報。請在各電腦的管理工具啟用「GitHub 回報」。</p>`
+    : devices.map(({ d, reported, interval, stale }) => {
+      let badge, cls;
+      if (stale) { badge = "✖ 無更新"; cls = "bad"; }
+      else if (d.mining) { badge = "● 挖礦中"; cls = "good"; }
+      else if (d.pauseReason) { badge = "⏸ 暫停"; cls = "warn"; }
+      else { badge = "■ 已停止"; cls = ""; }
+      const icon = (d.deviceKind || "").split(" ")[0];
+      const parts = stale
+        ? [`超過 ${Math.round((now - reported.getTime()) / 60000)} 分鐘沒有回報（每 ${interval} 分鐘回報）`, "最後 " + fmtTime(reported)]
+        : d.mining
+          ? [`份額 ${d.accepted}/${d.rejected}`, `${d.threads} 執行緒`, d.tempC != null ? d.tempC.toFixed(0) + "°C" : "溫度 N/A", "運作 " + duration(d.uptimeSeconds), "回報 " + ago(reported)]
+          : [d.pauseReason || d.status, "回報 " + ago(reported)];
+      if (d.walletTag && tags.size > 1) parts.push("⚠ 不同錢包");
+      const rows = [
+        ["電腦", `${d.machine}（${d.deviceKind}）`],
+        ["算力", `${hashrate(d.hashrateHps)}（平均 ${hashrate(d.averageHps)}）`],
+        ["份額", `接受 ${d.accepted} / 拒絕 ${d.rejected}`],
+        ["執行緒", d.threads],
+        ["溫度", d.tempC != null ? d.tempC.toFixed(1) + " °C（ACPI）" : "N/A（這台電腦沒有溫度感測）"],
+        ["礦池", d.pool || "—"],
+        ["狀態", d.status + (d.pauseReason ? `（${d.pauseReason}）` : "")],
+        ["管理工具", d.version],
+        ["回報時間", fmtTime(reported) + `（每 ${interval} 分鐘）`],
+      ];
+      if (d.lastError) rows.push(["最近錯誤", `${d.lastErrorUtc ? fmtTime(new Date(d.lastErrorUtc)) + " " : ""}${d.lastError}`]);
+      return `<div class="card${stale ? " stale" : ""}">
+        <div class="l1"><span class="name">${esc(icon)} ${esc(d.name)}</span>${!stale && d.mining ? `<span class="rate">${esc(hashrate(d.hashrateHps))}</span>` : ""}${d.lastError ? '<span class="warn" title="有最近錯誤">⚠</span>' : ""}<span class="badge ${cls}">${esc(badge)}</span></div>
+        <div class="l2">${esc(parts.join(" ・ "))}</div>
+        <details><summary>詳細資訊</summary><table>${rows.map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join("")}</table></details>
+      </div>`;
+    }).join("");
+
+  const w = devices.map(x => x.wallet).filter(Boolean).sort((a, b) => new Date(b.updatedUtc) - new Date(a.updatedUtc))[0];
+  if (w) {
+    const p = w.usdtPrice;
+    $("wallet").innerHTML = [
+      ["今日", vrsc(w.todayVrsc), usdt(w.todayVrsc, p)],
+      ["近 7 日", vrsc(w.last7DaysVrsc), usdt(w.last7DaysVrsc, p)],
+      ["累積（已付＋待付＋未成熟）", vrsc(w.lifetimeVrsc), usdt(w.lifetimeVrsc, p)],
+      ["已支付（已進錢包）", vrsc(w.paidVrsc), usdt(w.paidVrsc, p)],
+      ["待支付 / 未成熟", `${vrsc(w.pendingVrsc)} / ${vrsc(w.immatureVrsc)}`, ""],
+      ["鏈上錢包餘額", vrsc(w.onChainVrsc), usdt(w.onChainVrsc, p)],
+      ["VRSC 價格", p != null ? p.toFixed(4) + " USDT" : "N/A", "資料時間 " + fmtTime(new Date(w.updatedUtc))],
+    ].map(([k, v, sub]) => `<div class="tile"><div class="k">${esc(k)}</div><div class="v">${esc(v)}</div><div class="k">${esc(sub)}</div></div>`).join("");
+  }
+  $("walletSec").hidden = !w;
+  $("summarySec").hidden = false;
+  $("devicesSec").hidden = false;
+  $("meta").textContent = `${devices.length} 台電腦 ・ 頁面更新 ${fmtTime(new Date())}`;
+}
+
+let timer = null, next = 0;
+async function load() {
+  const id = currentGist();
+  $("setup").hidden = !!id || !!new URLSearchParams(location.search).get("data");
+  if (!id && $("setup").hidden === false) { $("meta").textContent = "尚未設定 Gist"; return; }
+  $("error").hidden = true;
+  try {
+    render(await fetchGist(id));
+  } catch (e) {
+    $("error").textContent = e.message;
+    $("error").hidden = false;
+    $("meta").textContent = "讀取失敗";
+  }
+  next = Date.now() + REFRESH_SECONDS * 1000;
+}
+function tick() {
+  const s = Math.max(0, Math.round((next - Date.now()) / 1000));
+  $("countdown").textContent = next ? `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")} 後自動更新` : "";
+  if (next && s === 0) load();
+}
+$("refresh").onclick = load;
+$("forget").onclick = () => { localStorage.removeItem("ovmGist"); history.replaceState(null, "", location.pathname); $("setup").hidden = false; };
+$("gistSave").onclick = () => {
+  const id = cleanGist($("gistInput").value);
+  if (!id) return;
+  localStorage.setItem("ovmGist", id);
+  history.replaceState(null, "", location.pathname + "?gist=" + id);
+  load();
+};
+document.addEventListener("visibilitychange", () => { if (!document.hidden && next && Date.now() > next - 60000) load(); });
+load();
+timer = setInterval(tick, 1000);
+</script>
+</body>
+</html>
