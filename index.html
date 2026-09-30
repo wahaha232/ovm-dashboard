@@ -194,6 +194,7 @@ function render({ files, updated }) {
         ["狀態", d.status + (d.pauseReason ? `（${d.pauseReason}）` : "")],
         ["管理工具", d.version],
         ["更新", d.updateStatus || "（1.13.2 以前的版本不回報）"],
+        ["區網", d.lanAddresses && d.lanAddresses.length ? d.lanAddresses.join("、") + (d.statusPageOn ? "（狀態網頁開啟）" : "（狀態網頁未開放區網）") : "（1.13.3 以前的版本不回報）"],
         ["回報時間", fmtTime(reported) + `（每 ${interval} 分鐘）`],
       ];
       if (d.lastError) rows.push(["最近錯誤", `${d.lastErrorUtc ? fmtTime(new Date(d.lastErrorUtc)) + " " : ""}${d.lastError}`]);
