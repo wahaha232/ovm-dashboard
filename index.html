@@ -81,6 +81,13 @@
     <p class="note">收益與 USDT 換算由各裝置從 LuckPool／CoinGecko 取得後回報，取最新的一份；換算僅供參考，不構成財務建議。LuckPool 不提供單一裝置的收益，因此不分攤到各裝置。</p>
   </section>
 
+  <section id="btcSec" hidden>
+    <h2>₿ BTC 樂透收益（solo 挖礦，各裝置回報）</h2>
+    <div class="tiles" id="btc"></div>
+    <p class="warn" id="btcWarn" style="font-size:13px;margin:8px 0 0" hidden></p>
+    <p class="note">BTC 樂透是單人（solo）挖礦：只有自己挖到整個區塊才有收益，沒挖到就是 0，不會累積小額收益。「每日期望值」只是用目前算力、網路難度和平均區塊獎勵算出的數學平均，實際上幾乎一定是 0。網路難度、區塊獎勵和價格由瀏覽器向 mempool.space 讀取。僅供參考，不構成財務建議。</p>
+  </section>
+
   <div class="bar">
     <button id="refresh">立即更新</button>
     <span class="note" id="countdown"></span>
@@ -121,6 +128,98 @@ function duration(sec) {
 }
 const fmtTime = d => d.toLocaleString("zh-TW", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false });
 
+// Chinese large-number units, so lottery-sized numbers stay readable (e.g. 「450 億」).
+function bigCount(n) {
+  if (n == null || !isFinite(n)) return "N/A";
+  const units = [[1e20, "垓"], [1e16, "京"], [1e12, "兆"], [1e8, "億"], [1e4, "萬"]];
+  for (const [v, u] of units) if (Math.abs(n) >= v) return (n / v).toPrecision(3).replace(/\.?0+$/, "") + " " + u;
+  return Number(n).toLocaleString("zh-TW", { maximumFractionDigits: 2 });
+}
+const btcDiff = v => !v ? "0（尚無份額）" : bigCount(v);
+function yearsText(sec) {
+  if (sec == null || !isFinite(sec)) return "N/A";
+  const years = sec / (365.25 * 86400);
+  if (years >= 1) return "約 " + bigCount(years) + "年";
+  const days = sec / 86400;
+  return days >= 1 ? "約 " + days.toFixed(1) + " 天" : "約 " + (sec / 3600).toFixed(1) + " 小時";
+}
+const tiny = v => v === 0 ? "0" : v >= 0.01 ? v.toFixed(4) : v.toExponential(2);
+
+// Network difficulty, average block reward (subsidy + fees) and BTC price, read by the browser
+// from mempool.space (CORS enabled). Failures only blank the derived tiles.
+let btcNet = null;
+async function fetchBtcNetwork() {
+  const [blocks, prices] = await Promise.all([
+    fetch("https://mempool.space/api/v1/blocks", { cache: "no-store" }).then(r => r.ok ? r.json() : Promise.reject(new Error("HTTP " + r.status))),
+    fetch("https://mempool.space/api/v1/prices", { cache: "no-store" }).then(r => r.ok ? r.json() : null).catch(() => null),
+  ]);
+  const rewards = blocks.map(b => b.extras && b.extras.reward).filter(v => v > 0);
+  return {
+    difficulty: blocks[0].difficulty,
+    height: blocks[0].height,
+    rewardBtc: rewards.length ? rewards.reduce((s, v) => s + v, 0) / rewards.length / 1e8 : 3.125,
+    priceUsd: prices && prices.USD > 0 ? prices.USD : null,
+    fetched: new Date(),
+  };
+}
+
+function renderBtc(devices) {
+  const list = devices.filter(x => x.btc);
+  $("btcSec").hidden = list.length === 0;
+  if (list.length === 0) return;
+  const live = list.filter(x => !x.stale && x.d.mining);
+  // 2.9.0+: the pool lane mines RandomX through XMRig (paid in BTC by unMineable). Lanes carry "algo";
+  // older versions have no field and every lane is SHA-256.
+  const liveLanes = live.flatMap(x => (x.miner && x.miner.lanes) || []).filter(l => l.running);
+  const isRx = l => l.algo === "RandomX";
+  const rate = liveLanes.length ? liveLanes.filter(l => !isRx(l)).reduce((s, l) => s + (l.hashrateHps || 0), 0)
+                                : live.reduce((s, x) => s + (x.d.hashrateHps || 0), 0);
+  const rxLanes = liveLanes.filter(isRx);
+  const rxRate = rxLanes.reduce((s, l) => s + (l.hashrateHps || 0), 0);
+  const rxAcc = rxLanes.reduce((s, l) => s + (l.accepted || 0), 0), rxRej = rxLanes.reduce((s, l) => s + (l.rejected || 0), 0);
+  const miners = list.map(x => x.miner).filter(Boolean);
+  const hashes = miners.reduce((s, m) => s + (m.hashesTotal || 0), 0);
+  const blocks = miners.reduce((s, m) => s + (m.blocksFound || 0), 0);
+  const best = Math.max(0, ...miners.flatMap(m => [m.bestDifficulty || 0, ...(m.lanes || []).filter(l => !isRx(l)).map(l => l.bestDifficulty || 0)]));
+  const shaPool = liveLanes.filter(l => !isRx(l) && l.mode === "pool");
+  const acc = shaPool.reduce((s, l) => s + (l.accepted || 0), 0), rej = shaPool.reduce((s, l) => s + (l.rejected || 0), 0);
+
+  const net = btcNet;
+  const work = net ? net.difficulty * 4294967296 : null;     // expected hashes per block
+  const perDay = net && rate > 0 ? rate * 86400 / work : null; // expected blocks per day
+  const pDay = perDay == null ? null : (perDay < 1e-6 ? perDay - perDay * perDay / 2 : 1 - Math.exp(-perDay));
+  const evBtc = perDay == null ? null : perDay * net.rewardBtc;
+  const price = net && net.priceUsd;
+
+  const tiles = [
+    ["BTC 裝置", `${live.length} 挖礦 / ${list.length} 台`, "", live.length < list.length ? "bad" : "good"],
+    ["BTC 總算力（SHA-256d）", hashrate(rate), "各裝置回報合計"],
+    ["實際收益", blocks > 0 ? `${blocks} 個區塊` : "0 BTC", blocks > 0 ? "請到區塊瀏覽器確認" : "尚未挖到區塊", blocks > 0 ? "good" : ""],
+    ["每日期望值", evBtc == null ? "N/A" : tiny(evBtc * 1e8) + " sat", evBtc == null || !price ? "數學平均，不是實際收益" : "≈ US$ " + tiny(evBtc * price) + "（數學平均）"],
+    ["24 小時中獎機率", pDay == null ? "N/A" : pDay > 0 ? "約 1 / " + bigCount(1 / pDay) : "0", "以目前算力計算"],
+    ["預期出塊時間", perDay ? yearsText(86400 / perDay) : "N/A", "平均要等這麼久才中一次"],
+    ["累計雜湊（各裝置合計）", bigCount(hashes) + "次", work ? "約一個區塊所需的 " + tiny(hashes / work * 100) + "%" : ""],
+    ["最佳難度", btcDiff(best), net && best > 0 ? "網路難度的 " + tiny(best / net.difficulty * 100) + "%" : ""],
+    ...(rxLanes.length ? [
+      ["礦池線道算力（RandomX）", hashrate(rxRate), `${rxLanes.length} 台 XMRig ・ unMineable 以 BTC 支付`, "good"],
+      ["礦池線道份額（RandomX）", `接受 ${rxAcc} / 拒絕 ${rxRej}`, "累積到 0.00075 BTC 才出金到錢包"],
+    ] : shaPool.length ? [["礦池線道份額（SHA-256）", `接受 ${acc} / 拒絕 ${rej}`, "solo 礦池難度很高，CPU 很難出份額"]] : []),
+    ["網路難度", net ? bigCount(net.difficulty) : "N/A", net ? `區塊高度 ${net.height}` : "mempool.space 讀取失敗"],
+    ["區塊獎勵（近 15 塊平均）", net ? net.rewardBtc.toFixed(4) + " BTC" : "N/A", price ? "≈ US$ " + Math.round(net.rewardBtc * price).toLocaleString("en-US") : ""],
+    ["BTC 價格", price ? "US$ " + price.toLocaleString("en-US") : "N/A", net ? "mempool.space ・ " + fmtTime(net.fetched) : ""],
+  ];
+  $("btc").innerHTML = tiles.map(([k, v, sub, cls]) =>
+    `<div class="tile"><div class="k">${esc(k)}</div><div class="v ${cls || ""}">${esc(v)}</div><div class="k">${esc(sub)}</div></div>`).join("");
+
+  // 2.7.x built every block header with an all-zero prevhash and sent the nonce byte-swapped,
+  // so its shares and blocks can never be valid (found in the 2026-10-05 review).
+  const broken = list.filter(x => /^2\.[0-7]\./.test(x.d.version || "")).map(x => `${x.d.name}（${x.d.machine}，${x.d.version}）`);
+  $("btcWarn").textContent = broken.length
+    ? "⚠ 這些裝置的 BTC Lottery Miner 是 2.7.x 以前的版本，挖礦結果有位元組順序錯誤，找到的份額／區塊無效，請更新到 2.8.0 以上（建議最新版）：" + broken.join("、")
+    : "";
+  $("btcWarn").hidden = broken.length === 0;
+}
+
 function currentGist() {
   const q = new URLSearchParams(location.search);
   const fromUrl = cleanGist(q.get("gist"));
@@ -155,23 +254,27 @@ function render({ files, updated }) {
     const d = f.device, reported = new Date(d.reportedUtc);
     const interval = Math.max(1, f.intervalMinutes || 10);
     const stale = now - reported.getTime() > interval * 2.5 * 60000;
-    return { d, reported, interval, stale, wallet: f.wallet };
+    const btc = String(f.schema || "").startsWith("btc-lottery-miner");
+    return { d, reported, interval, stale, wallet: f.wallet, btc, miner: f.miner };
   }).sort((a, b) => (a.d.name || "").localeCompare(b.d.name || "", "zh-Hant"));
 
   const mining = devices.filter(x => !x.stale && x.d.mining);
-  const total = mining.reduce((s, x) => s + (x.d.hashrateHps || 0), 0);
+  // VerusHash and SHA-256d hashrates are different units of work, so the VRSC total leaves the
+  // BTC lottery devices out; they get their own section below.
+  const vrscMining = mining.filter(x => !x.btc);
+  const total = vrscMining.reduce((s, x) => s + (x.d.hashrateHps || 0), 0);
   const tags = new Set(devices.map(x => x.d.walletTag).filter(Boolean));
 
   $("summary").innerHTML = [
     ["裝置", `${mining.length} 挖礦 / ${devices.length} 台`, mining.length < devices.length ? "bad" : "good"],
-    ["總算力（各裝置回報）", hashrate(total)],
-    ["接受份額（合計）", mining.reduce((s, x) => s + (x.d.accepted || 0), 0) + " / 拒絕 " + mining.reduce((s, x) => s + (x.d.rejected || 0), 0)],
+    ["總算力（VRSC 裝置）", hashrate(total)],
+    ["接受份額（VRSC 合計）", vrscMining.reduce((s, x) => s + (x.d.accepted || 0), 0) + " / 拒絕 " + vrscMining.reduce((s, x) => s + (x.d.rejected || 0), 0)],
     ["最後更新", updated ? ago(updated) : "N/A"],
   ].map(([k, v, cls]) => `<div class="tile"><div class="k">${esc(k)}</div><div class="v ${cls || ""}">${esc(v)}</div></div>`).join("");
 
   $("devices").innerHTML = devices.length === 0
     ? `<p class="note">Gist 裡還沒有任何裝置的回報。請在各裝置的管理工具啟用「GitHub 回報」。</p>`
-    : devices.map(({ d, reported, interval, stale }) => {
+    : devices.map(({ d, reported, interval, stale, btc, miner }) => {
       let badge, cls;
       if (stale) { badge = "✖ 無更新"; cls = "bad"; }
       else if (d.mining) { badge = "● 挖礦中"; cls = "good"; }
@@ -185,7 +288,7 @@ function render({ files, updated }) {
           : [d.pauseReason || d.status, "回報 " + ago(reported)];
       if (!stale && d.batteryPercent != null) parts.splice(1, 0, `🔋 ${Math.round(d.batteryPercent)}%${d.charging ? " 充電中" : d.charging === false ? " 用電池" : ""}`);
       if (d.walletTag && tags.size > 1) parts.push("⚠ 不同錢包");
-      const rows = [
+      let rows = [
         ["裝置", `${d.machine}（${d.deviceKind}）`],
         ["算力", `${hashrate(d.hashrateHps)}（平均 ${hashrate(d.averageHps)}）`],
         ["份額", `接受 ${d.accepted} / 拒絕 ${d.rejected}`],
@@ -199,7 +302,21 @@ function render({ files, updated }) {
         ["區網", d.lanAddresses && d.lanAddresses.length ? d.lanAddresses.join("、") + (d.statusPageOn ? "（狀態網頁開啟）" : "（狀態網頁未開放區網）") : "（1.13.3 以前的版本不回報）"],
         ["回報時間", fmtTime(reported) + `（每 ${interval} 分鐘）`],
       ];
-      if (d.lastError) rows.push(["最近錯誤", `${d.lastErrorUtc ? fmtTime(new Date(d.lastErrorUtc)) + " " : ""}${d.lastError}`]);
+      if (btc) {
+        // BTC Lottery Miner reports no LAN/battery data and is not managed by OpenVerusMiner.
+        rows = rows.filter(([k]) => k !== "區網" && k !== "電量").map(([k, v]) => [k === "管理工具" ? "程式版本" : k, v]);
+        if (miner) {
+          rows.push(["累計雜湊", bigCount(miner.hashesTotal) + "次"]);
+          rows.push(["最佳難度", btcDiff(miner.bestDifficulty)]);
+          rows.push(["找到區塊", `${miner.blocksFound || 0} 個`]);
+          for (const lane of miner.lanes || []) {
+            rows.push([(lane.label || lane.mode) + (lane.algo === "RandomX" ? "（RandomX）" : ""), lane.running
+              ? `${hashrate(lane.hashrateHps)}・${lane.threads} 執行緒・份額 ${lane.accepted}/${lane.rejected}${lane.connected ? "" : "・未連線"}`
+              : "已停止"]);
+          }
+        }
+      }
+      if (d.lastError) rows.push(["最近錯誤",`${d.lastErrorUtc ? fmtTime(new Date(d.lastErrorUtc)) + " " : ""}${d.lastError}`]);
       return `<div class="card${stale ? " stale" : ""}">
         <div class="l1"><span class="name">${esc(icon)} ${esc(d.name)}</span>${!stale && d.mining ? `<span class="rate">${esc(hashrate(d.hashrateHps))}</span>` : ""}${d.lastError ? '<span class="warn" title="有最近錯誤">⚠</span>' : ""}<span class="badge ${cls}">${esc(badge)}</span></div>
         <div class="l2">${esc(parts.join(" ・ "))}</div>
@@ -221,6 +338,7 @@ function render({ files, updated }) {
     ].map(([k, v, sub]) => `<div class="tile"><div class="k">${esc(k)}</div><div class="v">${esc(v)}</div><div class="k">${esc(sub)}</div></div>`).join("");
   }
   $("walletSec").hidden = !w;
+  renderBtc(devices);
   $("summarySec").hidden = false;
   $("devicesSec").hidden = false;
   $("meta").textContent = `${devices.length} 台裝置 ・ 頁面更新 ${fmtTime(new Date())}`;
@@ -233,7 +351,11 @@ async function load() {
   if (!id && $("setup").hidden === false) { $("meta").textContent = "尚未設定 Gist"; return; }
   $("error").hidden = true;
   try {
-    render(await fetchGist(id));
+    const data = await fetchGist(id);
+    if (data.files.some(f => String(f.schema || "").startsWith("btc-lottery-miner"))) {
+      try { btcNet = await fetchBtcNetwork(); } catch { /* keep the previous values; tiles show N/A when never loaded */ }
+    }
+    render(data);
   } catch (e) {
     $("error").textContent = e.message;
     $("error").hidden = false;
