@@ -272,9 +272,12 @@ function render({ files, updated }) {
     ["最後更新", updated ? ago(updated) : "N/A"],
   ].map(([k, v, cls]) => `<div class="tile"><div class="k">${esc(k)}</div><div class="v ${cls || ""}">${esc(v)}</div></div>`).join("");
 
+  // The cards are rebuilt on every refresh; remember which 「詳細資訊」 were open so they stay open.
+  const openIds = new Set([...document.querySelectorAll("#devices details[open]")].map(e => e.dataset.id));
   $("devices").innerHTML = devices.length === 0
     ? `<p class="note">Gist 裡還沒有任何裝置的回報。請在各裝置的管理工具啟用「GitHub 回報」。</p>`
     : devices.map(({ d, reported, interval, stale, btc, miner }) => {
+      const id = `${d.machine || ""}|${d.name || ""}`;
       let badge, cls;
       if (stale) { badge = "✖ 無更新"; cls = "bad"; }
       else if (d.mining) { badge = "● 挖礦中"; cls = "good"; }
@@ -320,7 +323,7 @@ function render({ files, updated }) {
       return `<div class="card${stale ? " stale" : ""}">
         <div class="l1"><span class="name">${esc(icon)} ${esc(d.name)}</span>${!stale && d.mining ? `<span class="rate">${esc(hashrate(d.hashrateHps))}</span>` : ""}${d.lastError ? '<span class="warn" title="有最近錯誤">⚠</span>' : ""}<span class="badge ${cls}">${esc(badge)}</span></div>
         <div class="l2">${esc(parts.join(" ・ "))}</div>
-        <details><summary>詳細資訊</summary><table>${rows.map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join("")}</table></details>
+        <details data-id="${esc(id)}"${openIds.has(id) ? " open" : ""}><summary>詳細資訊</summary><table>${rows.map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join("")}</table></details>
       </div>`;
     }).join("");
 
@@ -344,23 +347,37 @@ function render({ files, updated }) {
   $("meta").textContent = `${devices.length} 台裝置 ・ 頁面更新 ${fmtTime(new Date())}`;
 }
 
-let timer = null, next = 0;
+let timer = null, next = 0, loading = false;
 async function load() {
+  if (loading) return;   // a request is already in flight: the countdown, button and tab wake-up all land here
   const id = currentGist();
   $("setup").hidden = !!id || !!new URLSearchParams(location.search).get("data");
-  if (!id && $("setup").hidden === false) { $("meta").textContent = "尚未設定 Gist"; return; }
+  if (!id && $("setup").hidden === false) { next = 0; $("meta").textContent = "尚未設定 Gist"; return; }
+  loading = true;
+  $("refresh").disabled = true;
+  $("refresh").textContent = "更新中…";
   $("error").hidden = true;
+  let changed = false;
   try {
     const data = await fetchGist(id);
     if (data.files.some(f => String(f.schema || "").startsWith("btc-lottery-miner"))) {
       try { btcNet = await fetchBtcNetwork(); } catch { /* keep the previous values; tiles show N/A when never loaded */ }
     }
-    render(data);
+    changed = currentGist() !== id;   // the Gist was switched or forgotten while waiting: drop this response
+    if (!changed) render(data);
   } catch (e) {
-    $("error").textContent = e.message;
-    $("error").hidden = false;
-    $("meta").textContent = "讀取失敗";
+    changed = currentGist() !== id;
+    if (!changed) {
+      $("error").textContent = e.message;
+      $("error").hidden = false;
+      $("meta").textContent = "讀取失敗";
+    }
+  } finally {
+    loading = false;
+    $("refresh").disabled = false;
+    $("refresh").textContent = "立即更新";
   }
+  if (changed) { next = 0; if (currentGist()) load(); return; }
   next = Date.now() + REFRESH_SECONDS * 1000;
 }
 function tick() {
@@ -369,7 +386,16 @@ function tick() {
   if (next && s === 0) load();
 }
 $("refresh").onclick = load;
-$("forget").onclick = () => { localStorage.removeItem("ovmGist"); history.replaceState(null, "", location.pathname); $("setup").hidden = false; };
+$("forget").onclick = () => {
+  localStorage.removeItem("ovmGist");
+  history.replaceState(null, "", location.pathname);
+  next = 0;
+  for (const s of ["summarySec", "devicesSec", "walletSec", "btcSec"]) $(s).hidden = true;
+  $("error").hidden = true;
+  $("countdown").textContent = "";
+  $("meta").textContent = "尚未設定 Gist";
+  $("setup").hidden = false;
+};
 $("gistSave").onclick = () => {
   const id = cleanGist($("gistInput").value);
   if (!id) return;
