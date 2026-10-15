@@ -248,6 +248,11 @@ async function fetchGist(id) {
   return { files, updated: gist.updated_at ? new Date(gist.updated_at) : null };
 }
 
+function severity(x) {
+  if (x.stale) return 0;
+  return !x.d.mining || x.d.lastError ? 1 : 2;
+}
+
 function render({ files, updated }) {
   const now = Date.now();
   const devices = files.filter(f => f && f.device).map(f => {
@@ -256,7 +261,8 @@ function render({ files, updated }) {
     const stale = now - reported.getTime() > interval * 2.5 * 60000;
     const btc = String(f.schema || "").startsWith("btc-lottery-miner");
     return { d, reported, interval, stale, wallet: f.wallet, btc, miner: f.miner };
-  }).sort((a, b) => (a.d.name || "").localeCompare(b.d.name || "", "zh-Hant"));
+  // Problems first: no recent report, then stopped/paused or last-error devices, then healthy miners.
+  }).sort((a, b) => severity(a) - severity(b) || (a.d.name || "").localeCompare(b.d.name || "", "zh-Hant"));
 
   const mining = devices.filter(x => !x.stale && x.d.mining);
   // VerusHash and SHA-256d hashrates are different units of work, so the VRSC total leaves the
